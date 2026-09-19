@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="A 100% client-side AI chatbot. Your API key stays in your browser — it is never stored in the app, the repository, or any server.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https: http://localhost:* http://127.0.0.1:*; img-src data: blob:; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+<title>AI Chat</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #11161d;
+    --panel-2: #0d1319;
+    --border: #243040;
+    --border-soft: #1c2633;
+    --text: #e6edf3;
+    --muted: #8b98a9;
+    --accent: #4f8cff;
+    --accent-strong: #2f6bff;
+    --user-bubble: #1d3b66;
+    --bot-bubble: #151d28;
+    --ok: #22c55e;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --radius: 14px;
+    font-size: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: none; }
+  input, textarea, select {
+    font: inherit; color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    width: 100%;
+    outline: none;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,140,255,.15); }
+  textarea { resize: none; }
+  label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 14px; }
+  label > span { display: block; margin-bottom: 6px; font-weight: 500; }
+  label input[type="text"], label input[type="password"], label input[type="number"], label select, label textarea { margin-top: 2px; }
+
+  /* ---------- Layout ---------- */
+  .app {
+    height: 100dvh;
+    max-width: 860px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--border-soft);
+    border-right: 1px solid var(--border-soft);
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border-soft);
+    background: rgba(17,22,29,.85);
+    backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .brand h1 { font-size: 1rem; font-weight: 650; white-space: nowrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #55606e; flex: none; transition: background .3s; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(34,197,94,.6); }
+  .badge {
+    font-size: .72rem; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 2px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px;
+  }
+  .actions { display: flex; gap: 8px; }
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 10px;
+    display: grid; place-items: center;
+    border: 1px solid var(--border); background: var(--panel);
+    transition: border-color .15s, background .15s;
+  }
+  .icon-btn:hover { border-color: var(--accent); background: var(--panel-2); }
+  .icon-btn svg { width: 18px; height: 18px; stroke: var(--muted); }
+  .icon-btn:hover svg { stroke: var(--text); }
+
+  /* ---------- Chat ---------- */
+  main { flex: 1; overflow-y: auto; padding: 22px 18px 10px; scroll-behavior: smooth; }
+  .msg { display: flex; flex-direction: column; margin-bottom: 18px; animation: rise .25s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .who { font-size: .74rem; font-weight: 650; color: var(--muted); margin: 0 4px 6px; letter-spacing: .02em; }
+  .bubble {
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    max-width: 88%;
+    line-height: 1.6;
+    font-size: .95rem;
+    overflow-wrap: break-word;
+  }
+  .msg.user { align-items: flex-end; }
+  .msg.user .bubble { background: var(--user-bubble); border: 1px solid #2a4d7c; border-bottom-right-radius: 4px; white-space: pre-wrap; }
+  .msg.assistant .bubble { background: var(--bot-bubble); border: 1px solid var(--border); border-bottom-left-radius: 4px; width: 88%; }
+  .msg.assistant .content { white-space: normal; }
+  .msg.assistant .content > *:first-child { margin-top: 0; }
+  .msg.assistant .content > *:last-child { margin-bottom: 0; }
+  .content p { margin: .55em 0; }
+  .content strong { color: #fff; }
+  .content a { color: var(--accent); }
+  .content .ic, .content code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .86em;
+    background: #0a0f15; border: 1px solid var(--border-soft);
+    padding: .12em .4em; border-radius: 6px;
+  }
+  pre {
+    background: #0a0e13; border: 1px solid var(--border-soft);
+    border-radius: 10px; overflow: hidden;
+    margin: .7em 0;
+  }
+  .codebar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 12px;
+    background: #101720; border-bottom: 1px solid var(--border-soft);
+    font-size: .72rem; color: var(--muted);
+  }
+  .copycode { color: var(--muted); font-size: .72rem; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); }
+  .copycode:hover { color: var(--text); border-color: var(--accent); }
+  pre code {
+    display: block; padding: 12px 14px;
+    overflow-x: auto; max-height: 340px;
+    background: none; border: none; font-size: .84rem; line-height: 1.55;
+    white-space: pre;
+  }
+  .err { color: #ffb4b4; }
+  .err .hint { display: block; margin-top: 6px; font-size: .82rem; color: var(--warn); }
+  .stopped { color: var(--muted); font-size: .8rem; }
+
+  /* typing dots */
+  .typing { display: inline-flex; gap: 5px; padding: 4px 0; }
+  .typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 70%, 100% { opacity: .25; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-3px); } }
+
+  /* empty state */
+  .hero { max-width: 560px; margin: 9vh auto 0; text-align: center; padding: 0 8px; }
+  .hero .logo { font-size: 2.6rem; }
+  .hero h2 { font-size: 1.5rem; margin: 10px 0 8px; font-weight: 650; }
+  .hero p { color: var(--muted); font-size: .92rem; line-height: 1.6; margin-bottom: 22px; }
+  .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .chip {
+    text-align: left; font-size: .84rem; color: var(--text);
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px; line-height: 1.45;
+    transition: border-color .15s, transform .15s;
+  }
+  .chip:hover { border-color: var(--accent); transform: translateY(-1px); }
+  @media (max-width: 560px) { .chips { grid-template-columns: 1fr; } }
+
+  /* ---------- Composer ---------- */
+  .composer {
+    display: flex; gap: 10px; align-items: flex-end;
+    padding: 12px 16px 8px;
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg);
+  }
+  .composer textarea {
+    flex: 1; max-height: 180px; min-height: 44px;
+    border-radius: 12px; padding: 11px 14px; line-height: 1.45;
+  }
+  .send {
+    flex: none; width: 44px; height: 44px; border-radius: 12px;
+    background: var(--accent-strong);
+    display: grid; place-items: center;
+    transition: background .15s, transform .1s;
+  }
+  .send:hover { background: var(--accent); }
+  .send:active { transform: scale(.94); }
+  .send svg { width: 20px; height: 20px; stroke: #fff; }
+  .send.stop { background: #7f1d1d; }
+  .send.stop:hover { background: var(--danger); }
+  .privacy {
+    text-align: center; font-size: .7rem; color: #5b6775;
+    padding: 6px 12px calc(10px + env(safe-area-inset-bottom));
+    line-height: 1.5;
+  }
+
+  /* ---------- Overlays ---------- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(5,8,12,.7);
+    backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    overflow-y: auto;
+  }
+  .overlay.hidden { display: none; }
+  .card {
+    width: min(540px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 26px 26px 22px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.5);
+    margin: auto;
+  }
+  .card h2 { font-size: 1.15rem; font-weight: 650; margin-bottom: 6px; }
+  .card .sub { color: var(--muted); font-size: .86rem; line-height: 1.55; margin-bottom: 18px; }
+  .sec-note {
+    background: var(--panel-2); border: 1px solid var(--border-soft);
+    border-radius: 12px; padding: 13px 15px;
+    font-size: .8rem; color: var(--muted); line-height: 1.6;
+    margin-bottom: 18px;
+  }
+  .sec-note b { color: var(--text); font-weight: 600; }
+  .sec-note ul { margin: 6px 0 0 18px; }
+  .sec-note li { margin-bottom: 3px; }
+  .row { display: flex; gap: 12px; }
+  .row > label { flex: 1; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 2px 0 4px; font-size: .84rem; color: var(--text); cursor: pointer; }
+  .check input { width: auto; accent-color: var(--accent-strong); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    border-radius: 11px; padding: 11px 18px;
+    font-weight: 600; font-size: .9rem;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    transition: border-color .15s, background .15s;
+  }
+  .btn:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+  .btn.primary:hover { background: var(--accent); border-color: var(--accent); }
+  .btn.danger { color: var(--danger); border-color: rgba(239,68,68,.35); }
+  .btn.danger:hover { background: rgba(239,68,68,.1); border-color: var(--danger); }
+  .card .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; gap: 10px; flex-wrap: wrap; }
+  .card .foot .grow { flex: 1; }
+  .dangerzone { border-top: 1px solid var(--border-soft); margin-top: 20px; padding-top: 16px; }
+  .dangerzone h3 { font-size: .78rem; color: var(--danger); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+  .dangerzone .btn { padding: 8px 14px; font-size: .82rem; font-weight: 500; margin: 0 8px 8px 0; }
+  .key-status { font-size: .8rem; color: var(--muted); margin-bottom: 12px; }
+  .key-status code { color: var(--ok); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .hint { font-size: .72rem; color: #5b6775; margin-top: 5px; line-height: 1.5; }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: #243040; border-radius: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <span class="dot" id="statusDot" title="API key status"></span>
+      <h1>AI Chat</h1>
+      <span class="badge" id="modelBadge" title="Active model"></span>
+    </div>
+    <div class="actions">
+      <button class="icon-btn" id="newChatBtn" title="New chat" aria-label="New chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="chat" aria-live="polite"></main>
+
+  <div class="composer">
+    <textarea id="input" rows="1" placeholder="Message…" autocomplete="off"></textarea>
+    <button class="send" id="sendBtn" aria-label="Send message">
+      <svg id="sendIcon" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      <svg id="stopIcon" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+    </button>
+  </div>
+  <p class="privacy">100% client-side &middot; your API key is stored only in this browser &middot; chat goes directly to the model provider over HTTPS</p>
+</div>
+
+<!-- ================= SETUP (first run / no key) ================= -->
+<div class="overlay hidden" id="setup">
+  <form class="card" id="setupForm">
+    <h2>⚡ Connect your AI</h2>
+    <p class="sub">Paste your API key to start. This app has no backend of its own — it talks directly from your browser to the model provider.</p>
+
+    <div class="sec-note">
+      <b>🔒 How your key stays private</b>
+      <ul>
+        <li>The key is saved <b>only in this browser's local storage</b> (or nowhere, if you uncheck “remember”).</li>
+        <li>It is <b>never</b> in the app's code, the GitHub repo, or the URL — sharing this app (e.g. via GitHub Pages) shares nothing.</li>
+        <li>The only request that carries the key goes straight to the model provider, over HTTPS.</li>
+        <li>Visitors of the shared app see this same empty setup screen — they cannot see your key.</li>
+      </ul>
+    </div>
+
+    <label>
+      <span>API key</span>
+      <input type="password" id="s_key" placeholder="sk-…" autocomplete="new-password" required spellcheck="false">
+    </label>
+
+    <label>
+      <span>Provider</span>
+      <select id="s_provider">
+        <option value="openai" selected>OpenAI</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="groq">Groq</option>
+        <option value="gemini">Google Gemini</option>
+        <option value="mistral">Mistral</option>
+        <option value="custom">Custom (OpenAI-compatible)</option>
+      </select>
+    </label>
+
+    <label>
+      <span>Base URL</span>
+      <input type="text" id="s_url" spellcheck="false">
+    </label>
+
+    <label>
+      <span>Model</span>
+      <input type="text" id="s_model" spellcheck="false">
+      <div class="hint">For local endpoints (e.g. Ollama), open this app via <code>http://localhost</code> — browsers block mixed content on HTTPS pages.</div>
+    </label>
+
+    <label class="check">
+      <input type="checkbox" id="s_remember" checked>
+      Remember key in this browser (uncheck to keep it only for this session)
+    </label>
+
+    <div class="foot">
+      <button type="submit" class="btn primary grow">Start chatting</button>
+    </div>
+  </form>
+</div>
+
+<!-- ================= SETTINGS ================= -->
+<div class="overlay hidden" id="settings">
+  <form class="card" id="settingsForm">
+    <h2>Settings</h2>
+    <p class="sub">Change your provider, model, or forget the stored key.</p>
+
+    <p class="key-status" id="keyStatus"></p>
+
+    <label>
+      <span>API key <em style="font-weight:400">(leave blank to keep the current one)</em></span>
+      <input type="password" id="x_key" placeholder="•••• (unchanged)" autocomplete="new-password" spellcheck="false">
+    </label>
+
+    <label>
+      <span>Provider</span>
+      <select id="x_provider">
+        <option value="openai">OpenAI</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="groq">Groq</option>
+        <option value="gemini">Google Gemini</option>
+        <option value="mistral">Mistral</option>
+        <option value="custom">Custom (OpenAI-compatible)</option>
+      </select>
+    </label>
+
+    <div class="row">
+      <label>
+        <span>Base URL</span>
+        <input type="text" id="x_url" spellcheck="false">
+      </label>
+      <label>
+        <span>Model</span>
+        <input type="text" id="x_model" spellcheck="false">
+      </label>
+    </div>
+
+    <div class="row">
+      <label>
+        <span>Temperature</span>
+        <input type="number" id="x_temp" min="0" max="2" step="0.1">
+      </label>
+      <label>
+        <span>Streaming</span>
+        <select id="x_stream">
+          <option value="1">On (recommended)</option>
+          <option value="0">Off</option>
+        </select>
+      </label>
+    </div>
+
+    <label>
+      <span>System prompt</span>
+      <textarea id="x_system" rows="3"></textarea>
+    </label>
+
+    <div class="dangerzone">
+      <h3>Danger zone</h3>
+      <button type="button" class="btn danger" id="forgetKeyBtn">Forget API key</button>
+      <button type="button" class="btn danger" id="clearChatBtn">Clear conversation</button>
+      <button type="button" class="btn danger" id="wipeBtn">Delete all app data</button>
+    </div>
+
+    <div class="foot">
+      <button type="button" class="btn" id="settingsCancel">Cancel</button>
+      <button type="submit" class="btn primary">Save</button>
+    </div>
+  </form>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------------- Storage ---------------- */
+const LS_KEY  = 'aichat.key.v1';
+const LS_CFG  = 'aichat.cfg.v1';
+const LS_CHAT = 'aichat.chat.v1';
+const LS_PROV = 'aichat.provider.v1';
+
+const PROVIDERS = {
+  openai:     { url: 'https://api.openai.com/v1',                        model: 'gpt-5-mini' },
+  openrouter: { url: 'https://openrouter.ai/api/v1',                     model: 'openrouter/auto' },
+  groq:       { url: 'https://api.groq.com/openai/v1',                   model: 'llama-3.3-70b-versatile' },
+  gemini:     { url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
+  mistral:    { url: 'https://api.mistral.ai/v1',                        model: 'mistral-small-latest' },
+  custom:     { url: 'http://localhost:11434/v1',                        model: 'llama3.2' }
+};
+
+const DEFAULTS = {
+  baseUrl: PROVIDERS.openai.url,
+  model: PROVIDERS.openai.model,
+  temperature: 0.7,
+  system: 'You are a helpful, concise assistant.',
+  stream: true
+};
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  del(k)  { try { localStorage.removeItem(k); } catch (e) {} }
+};
+
+function loadCfg() {
+  try {
+    const raw = store.get(LS_CFG);
+    if (raw) return Object.assign({}, DEFAULTS, JSON.parse(raw));
+  } catch (e) {}
+  return Object.assign({}, DEFAULTS);
+}
+function loadKey() { return store.get(LS_KEY); }
+function loadChat() {
+  try {
+    const c = JSON.parse(store.get(LS_CHAT) || '[]');
+    return Array.isArray(c) ? c : [];
+  } catch (e) { return []; }
+}
+
+let cfg     = loadCfg();
+let apikey  = loadKey();           // may be null (session-only mode)
+let history = loadChat();          // [{role, content}, ...]
+let provider = store.get(LS_PROV) || 'openai';
+let abort   = null;
+let busy    = false;
+
+const $ = (id) => document.getElementById(id);
+const chatEl = $('chat'), inputEl = $('input'), sendBtn = $('sendBtn');
+
+/* ---------------- Markdown (tiny, safe) ---------------- */
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function inlineMd(s) {
+  let t = escapeHtml(s);
+  t = t.replace(/`([^`\n]+)`/g, '<code class="ic">$1</code>');
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
+  t = t.replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  t = t.replace(/\n/g, '<br>');
+  return t;
+}
+function mdToHtml(src) {
+  const parts = String(src).split('```');
+  let out = '';
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) { out += inlineMd(parts[i]); }
+    else {
+      let code = parts[i], lang = '';
+      const nl = code.indexOf('\n');
+      if (nl !== -1) {
+        const first = code.slice(0, nl).trim();
+        if (/^[a-zA-Z0-9_+#-]*$/.test(first)) { lang = first; code = code.slice(nl + 1); }
+      }
+      code = code.replace(/\n$/, '');
+      out += '<pre><div class="codebar"><span>' + (escapeHtml(lang) || 'code') +
+             '</span><button type="button" class="copycode">Copy</button></div><code>' +
+             escapeHtml(code) + '</code></pre>';
+    }
+  }
+  return out;
+}
+
+/* ---------------- Rendering ---------------- */
+function scrollDown() { chatEl.scrollTop = chatEl.scrollHeight; }
+
+function renderMsg(role, content) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + role;
+  const who = document.createElement('div');
+  who.className = 'who';
+  who.textContent = role === 'user' ? 'You' : 'Assistant';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  const body = document.createElement('div');
+  body.className = 'content';
+  if (role === 'user') body.textContent = content;
+  else body.innerHTML = content ? mdToHtml(content) : '';
+  bubble.appendChild(body);
+  wrap.appendChild(who);
+  wrap.appendChild(bubble);
+  chatEl.appendChild(wrap);
+  scrollDown();
+  return { wrap, body };
+}
+
+function showTyping(body) {
+  body.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+}
+
+function showError(body, message) {
+  let html = '<span class="err">⚠️ ' + escapeHtml(message) + '</span>';
+  if (/401|invalid api key|authentication|unauthorized/i.test(message)) {
+    html += '<span class="hint">Check your API key in Settings (⚙ top-right).</span>';
+  } else if (/failed to fetch|networkerror|load failed/i.test(message)) {
+    html += '<span class="hint">Network issue or the provider blocked browser requests. If using a local endpoint, open this app from http://localhost (browsers block mixed content on HTTPS pages).</span>';
+  } else if (/404|model not found|does not exist|not support/i.test(message)) {
+    html += '<span class="hint">The model may not exist for this provider — pick another one in Settings.</span>';
+  } else if (/429|rate limit|quota|billing/i.test(message)) {
+    html += '<span class="hint">Rate limit or quota hit — wait a moment, or check your provider account.</span>';
+  }
+  body.innerHTML = html;
+}
+
+function showHero() {
+  chatEl.innerHTML = '';
+  const hero = document.createElement('div');
+  hero.className = 'hero';
+  hero.innerHTML =
+    '<div class="logo">⚡</div>' +
+    '<h2>How can I help?</h2>' +
+    '<p>A private, browser-only AI chat. Pick a starter or type anything below.</p>' +
+    '<div class="chips">' +
+    SUGGESTIONS.map(s => '<button type="button" class="chip">' + escapeHtml(s) + '</button>').join('') +
+    '</div>';
+  chatEl.appendChild(hero);
+  hero.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    inputEl.value = chip.textContent;
+    autoGrow();
+    inputEl.focus();
+  });
+}
+
+const SUGGESTIONS = [
+  'Explain how a heat pump works, simply',
+  'Write a short, friendly email declining a meeting',
+  'Draft a haiku about the ocean at night',
+  'Give me 5 ideas for a weekend project'
+];
+
+function renderAll() {
+  chatEl.innerHTML = '';
+  if (!history.length) { showHero(); return; }
+  for (const m of history) renderMsg(m.role, m.content);
+}
+
+/* ---------------- Key / config UI ---------------- */
+function setKeyStatus() {
+  const dot = $('statusDot');
+  dot.classList.toggle('on', !!apikey);
+  dot.title = apikey ? 'API key active' : 'No API key';
+  $('modelBadge').textContent = cfg.model || 'no model';
+}
+
+function maskedKey() {
+  return apikey ? 'active — ends in ' + apikey.slice(-4) : 'none stored';
+}
+
+function openSetup() {
+  $('settings').classList.add('hidden');
+  if (provider !== 'custom' && PROVIDERS[provider]) {
+    $('s_url').value = cfg.baseUrl;
+    $('s_model').value = cfg.model;
+    $('s_provider').value = provider;
+  } else {
+    $('s_provider').value = 'custom';
+    $('s_url').value = cfg.baseUrl;
+    $('s_model').value = cfg.model;
+  }
+  $('setup').classList.remove('hidden');
+  setTimeout(() => $('s_key').focus(), 50);
+}
+
+function closeOverlays() {
+  $('setup').classList.add('hidden');
+  $('settings').classList.add('hidden');
+}
+
+function openSettings() {
+  $('keyStatus').innerHTML = 'Current key: <code>' + escapeHtml(maskedKey()) + '</code>';
+  $('x_provider').value = provider;
+  $('x_url').value = cfg.baseUrl;
+  $('x_model').value = cfg.model;
+  $('x_temp').value = cfg.temperature;
+  $('x_stream').value = cfg.stream ? '1' : '0';
+  $('x_system').value = cfg.system;
+  $('x_key').value = '';
+  $('x_key').placeholder = '••••' + (apikey ? '••••' + apikey.slice(-4) : '…');
+  $('settings').classList.remove('hidden');
+}
+
+function saveCfgToStorage() {
+  store.set(LS_CFG, JSON.stringify(cfg));
+  store.set(LS_PROV, provider);
+  setKeyStatus();
+}
+
+$('s_provider').addEventListener('change', (e) => {
+  const p = PROVIDERS[e.target.value];
+  if (p && e.target.value !== 'custom') { $('s_url').value = p.url; $('s_model').value = p.model; }
+});
+$('x_provider').addEventListener('change', (e) => {
+  const p = PROVIDERS[e.target.value];
+  if (p && e.target.value !== 'custom') { $('x_url').value = p.url; $('x_model').value = p.model; }
+});
+
+$('setupForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const key = $('s_key').value.trim();
+  if (!key) return;
+  apikey = key;
+  provider = $('s_provider').value;
+  cfg.baseUrl = $('s_url').value.trim() || PROVIDERS.openai.url;
+  cfg.model   = $('s_model').value.trim() || PROVIDERS.openai.model;
+  if ($('s_remember').checked) store.set(LS_KEY, apikey);
+  else store.del(LS_KEY);       // session-only: key lives in memory for this tab
+  saveCfgToStorage();
+  closeOverlays();
+  inputEl.focus();
+});
+
+$('settingsForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const key = $('x_key').value.trim();
+  if (key) {
+    apikey = key;
+    store.set(LS_KEY, key);
+  }
+  provider  = $('x_provider').value;
+  cfg.baseUrl     = $('x_url').value.trim() || cfg.baseUrl;
+  cfg.model       = $('x_model').value.trim() || cfg.model;
+  cfg.temperature = Math.min(2, Math.max(0, parseFloat($('x_temp').value) || 0.7));
+  cfg.stream      = $('x_stream').value === '1';
+  cfg.system      = $('x_system').value.trim() || DEFAULTS.system;
+  saveCfgToStorage();
+  closeOverlays();
+});
+
+$('forgetKeyBtn').addEventListener('click', () => {
+  store.del(LS_KEY);
+  apikey = null;
+  setKeyStatus();
+  openSetup();
+});
+$('clearChatBtn').addEventListener('click', () => {
+  history = [];
+  store.set(LS_CHAT, '[]');
+  renderAll();
+  closeOverlays();
+});
+$('wipeBtn').addEventListener('click', () => {
+  store.del(LS_KEY); store.del(LS_CFG); store.del(LS_CHAT); store.del(LS_PROV);
+  apikey = null;
+  cfg = loadCfg();
+  history = [];
+  provider = 'openai';
+  saveCfgToStorage();
+  renderAll();
+  closeOverlays();
+  openSetup();
+});
+
+$('settingsBtn').addEventListener('click', openSettings);
+$('settingsCancel').addEventListener('click', closeOverlays);
+$('newChatBtn').addEventListener('click', () => {
+  if (busy && abort) abort.abort();
+  history = [];
+  store.set(LS_CHAT, '[]');
+  renderAll();
+  inputEl.focus();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeOverlays();
+});
+
+/* ---------------- Chat loop ---------------- */
+function autoGrow() {
+  inputEl.style.height = 'auto';
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 180) + 'px';
+}
+inputEl.addEventListener('input', autoGrow);
+inputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+function setBusyUI(on) {
+  busy = on;
+  sendBtn.classList.toggle('stop', on);
+  $('sendIcon').style.display = on ? 'none' : '';
+  $('stopIcon').style.display = on ? '' : 'none';
+  inputEl.placeholder = on ? 'Generating…' : 'Message…';
+}
+
+async function send() {
+  if (busy) { if (abort) abort.abort(); return; }
+  const text = inputEl.value.trim();
+  if (!text) return;
+  if (!apikey) { openSetup(); return; }
+
+  inputEl.value = '';
+  autoGrow();
+  if (history.length === 0 || history[history.length - 1].role !== 'assistant') {
+    // remove hero if present
+    const hero = chatEl.querySelector('.hero');
+    if (hero) hero.remove();
+  }
+  history.push({ role: 'user', content: text });
+  renderMsg('user', text);
+
+  const { body } = renderMsg('assistant', '');
+  showTyping(body);
+  setBusyUI(true);
+  abort = new AbortController();
+
+  const endpoint = cfg.baseUrl.replace(/\/+$/, '') + '/chat/completions';
+  const messages = [];
+  if (cfg.system) messages.push({ role: 'system', content: cfg.system });
+  for (const m of history.slice(-30)) messages.push(m); // keep context bounded
+
+  const payload = {
+    model: cfg.model,
+    messages,
+    temperature: cfg.temperature,
+    stream: cfg.stream
+  };
+
+  let acc = '';
+  let gotToken = false;
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + apikey
+      },
+      body: JSON.stringify(payload),
+      signal: abort.signal
+    });
+
+    if (!res.ok) {
+      let msg = 'Request failed (HTTP ' + res.status + ')';
+      try {
+        const j = await res.json();
+        msg = (j.error && j.error.message) || j.message || msg;
+      } catch (err) {}
+      throw new Error(msg);
+    }
+
+    const ct = res.headers.get('content-type') || '';
+
+    if (cfg.stream && ct.includes('text/event-stream')) {
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          const t = line.trim();
+          if (!t.startsWith('data:')) continue;
+          const data = t.slice(5).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const j = JSON.parse(data);
+            const delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
+            if (delta) {
+              acc += delta;
+              gotToken = true;
+              body.innerHTML = mdToHtml(acc);
+              scrollDown();
+            }
+          } catch (err) { /* partial line — ignore */ }
+        }
+      }
+    } else if (cfg.stream && ct.includes('application/json')) {
+      // Provider ignored stream:true and returned plain JSON — handle it.
+      const j = await res.json();
+      acc = (j.choices && j.choices[0].message && j.choices[0].message.content) || '';
+      gotToken = !!acc;
+    } else {
+      // Explicit non-streaming request.
+      const j = await res.json();
+      acc = (j.choices && j.choices[0].message && j.choices[0].message.content) || '';
+      gotToken = !!acc;
+    }
+
+    if (gotToken) {
+      history.push({ role: 'assistant', content: acc });
+      body.innerHTML = mdToHtml(acc);
+    } else {
+      body.innerHTML = '<span class="err">The model returned an empty response.</span>';
+      history.pop(); // don't store the user turn as a dead end
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      if (acc) {
+        history.push({ role: 'assistant', content: acc });
+        body.innerHTML = mdToHtml(acc) + '<span class="stopped"> — stopped</span>';
+      } else {
+        body.innerHTML = '<span class="stopped">Stopped.</span>';
+        history.pop();
+      }
+    } else {
+      showError(body, err.message || String(err));
+      history.pop();
+    }
+  } finally {
+    setBusyUI(false);
+    abort = null;
+    history = history.slice(-60); // cap stored history
+    store.set(LS_CHAT, JSON.stringify(history));
+    scrollDown();
+    inputEl.focus();
+  }
+}
+
+sendBtn.addEventListener('click', send);
+
+/* copy-code buttons (event delegation) */
+chatEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('.copycode');
+  if (!btn) return;
+  const code = btn.closest('pre') && btn.closest('pre').querySelector('code');
+  if (!code) return;
+  const done = () => { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1200); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code.innerText).then(done).catch(done);
+  } else {
+    const r = document.createRange();
+    r.selectNode(code);
+    getSelection().removeAllRanges();
+    getSelection().addRange(r);
+    done();
+  }
+});
+
+/* ---------------- Init ---------------- */
+renderAll();
+setKeyStatus();
+if (!apikey) openSetup();
+inputEl.focus();
+
+})();
+</script>
+</body>
+</html>
